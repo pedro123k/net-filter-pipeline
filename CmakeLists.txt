@@ -1,0 +1,22 @@
+cmake_minimum_required(VERSION 3.20)
+
+project(net-filter-pipeline VERSION 1.0 LANGUAGES CXX)
+
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+add_library(dsp 
+    src/BiquadFilter.cpp
+    src/DigitalFilter.cpp
+)
+
+target_include_directories(dsp PUBLIC 
+    ${CMAKE_CURRENT_SOURCE_DIR}/include 
+)
+
+target_compile_features(dsp PUBLIC cxx_std_17)
+
+add_executable(app src/main.cpp)
+target_link_libraries(app PRIVATE dsp)
+
+add_executable(test1_dsp tests/test1.cpp)
+target_link_libraries(test1_dsp PRIVATE dsp)

@@ -11,3 +11,7 @@ __pycache__/
 
 #env files
 .env
+
+#testes
+plots.py
+results.txt
