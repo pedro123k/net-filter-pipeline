@@ -75,7 +75,7 @@ void DigitalFilter::processBlock(const vector<float> & input, vector<float> & ou
     output.clear();
     output.reserve(input.size());
 
-    for (auto x : input)
+    for (const auto & x : input)
         output.push_back(this->eval(x)); 
 
 }

@@ -12,6 +12,9 @@ __pycache__/
 #env files
 .env
 
+#build files
+/build
+
 #testes
 plots.py
 results.txt
