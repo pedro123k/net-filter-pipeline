@@ -10,7 +10,41 @@ add_library(dsp
     src/SignalPipeline.cpp
 )
 
+add_library(Boost_headers INTERFACE)
+add_library(Boost::headers ALIAS Boost_headers)
+
+add_library(udp_interface 
+    src/UDPInterface.cpp
+)
+
+if (WIN32)
+    find_path(BOOST_INCLUDE_DIR
+    NAMES boost/asio.hpp
+    PATH_SUFFIXES include
+    PATHS
+        "$ENV{MSYS2_PREFIX}"
+        /ucrt64
+        C:/msys64/ucrt64
+    REQUIRED
+    )
+    target_include_directories(Boost_headers INTERFACE "${BOOST_INCLUDE_DIR}")
+    target_link_libraries(Boost_headers INTERFACE ws2_32)
+else ()
+    find_package(Boost REQUIRED)
+    if (TARGET Boost::boost)
+        target_link_libraries(Boost_headers INTERFACE Boost::boost)
+    else()
+        target_include_directories(Boost_headers INTERFACE ${Boost_INCLUDE_DIRS})
+    endif()
+endif()
+
+target_link_libraries(udp_interface PUBLIC Boost::headers)
+
 target_include_directories(dsp PUBLIC 
+    ${CMAKE_CURRENT_SOURCE_DIR}/include 
+)
+
+target_include_directories(udp_interface PUBLIC 
     ${CMAKE_CURRENT_SOURCE_DIR}/include 
 )
 
@@ -24,3 +58,9 @@ target_link_libraries(test1_dsp PRIVATE dsp)
 
 add_executable(test2_dsp tests/test2.cpp)
 target_link_libraries(test2_dsp PRIVATE dsp)
+
+add_executable(test3_udp tests/test3.cpp)
+target_link_libraries(test3_udp PRIVATE Boost::headers)
+target_link_libraries(test3_udp PRIVATE dsp)
+target_link_libraries(test3_udp PRIVATE udp_interface)
+
