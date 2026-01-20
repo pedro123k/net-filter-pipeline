@@ -1,0 +1,25 @@
+{
+    "udp-parms": 
+    {
+        "server-port": 55555,
+        "samp-freq": 48000,
+        "client-addrv4": "127.0.0.1",
+        "concealment-policy": "FADE_LAST_GOOD"
+    },
+    "pipeline": [
+        {
+            "type": "gain",
+            "gain": -2
+        },  
+        {
+            "type": "high-pass",
+            "cut-freq": 3000,
+            "order": 2
+        },
+        {
+            "type": "notch",
+            "cut-freq": 6000,
+            "BW": 1
+        }
+    ]
+}
