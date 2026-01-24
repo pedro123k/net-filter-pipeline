@@ -20,3 +20,6 @@ plots.py
 results.txt
 udp_client.py
 udp_server.py
+
+#outputs
+coeffs.txt
