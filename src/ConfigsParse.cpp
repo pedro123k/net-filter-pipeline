@@ -225,3 +225,56 @@ nfp::Conn_info nfp::parse_conn_from(const json& j) {
         throw std::runtime_error("UDP Parameters error: " + std::string(err.what()));
     }
 }
+
+nfp::SignalPipeline nfp::build_pipeline(const std::vector<PElement_info>& pelements, float fs) {
+    nfp::SignalPipeline pipeline;
+
+    enum _Elements{GAIN, LOW_PASS, HIGH_PASS, BAND_PASS, NOTCH}; 
+    
+    static const std::unordered_map<std::string, _Elements> strtype2enum = {
+        {"gain", GAIN}, {"low-pass", LOW_PASS}, {"high-pass", HIGH_PASS}, {"band-pass", BAND_PASS}, {"notch", NOTCH}     
+    };
+
+    constexpr float PI = 3.14156f;
+
+    auto to_rad = [PI](const float _fs, const float _fc) {return 2 * PI * (_fc / _fs); };
+
+    for (const auto& pelement: pelements) {
+        switch (strtype2enum.at(pelement.type)) {
+            case GAIN:
+                pipeline.add_gain(pelement.gain);
+            break;
+            case LOW_PASS:
+                pipeline.add_digital_filter(DigitalFilter::low_pass_filter(
+                    to_rad(fs, pelement.cut_freq),
+                    pelement.order,
+                    pelement.Q
+                ));
+                break;
+            case HIGH_PASS:
+                pipeline.add_digital_filter(DigitalFilter::high_pass_filter(
+                    to_rad(fs, pelement.cut_freq),
+                    pelement.order,
+                    pelement.Q
+                ));
+                break;
+            case BAND_PASS:
+                pipeline.add_digital_filter(DigitalFilter::band_pass_filter(
+                    to_rad(fs, pelement.cut_freq),
+                    pelement.BW
+                ));
+                break;
+            case NOTCH:
+                pipeline.add_digital_filter(DigitalFilter::notch_filter(
+                    to_rad(fs, pelement.cut_freq),
+                    pelement.BW
+                ));
+                break;
+        
+        default:
+            break;
+        }        
+    }
+
+    return pipeline;
+}  

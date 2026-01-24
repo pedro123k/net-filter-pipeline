@@ -10,6 +10,7 @@
 #include <nfp/SignalPipeline.hpp>
 #include <thread>
 #include <vector>
+#include <functional>
 
 using boost::asio::ip::udp;
 using std::chrono::steady_clock;
@@ -25,8 +26,20 @@ namespace nfp {
 
     enum class CONCEALMENT {REPEAT_LAST_GOOD, FADE_LAST_GOOD, ALL_ZERO};
 
-    class UDPClient;
     class UDPServer;
+
+    class UDPClient {
+    private:
+        boost::asio::ip::udp::socket socket;
+        boost::asio::ip::address_v4 dest_ip;
+
+    public:
+        UDPClient(boost::asio::io_context & io_context, const boost::asio::ip::address_v4 out_addr) 
+            : socket(io_context, udp::v4()), dest_ip(out_addr) {}
+
+        void async_send(const std::vector<float>&, uint16_t);
+        void close();
+    };
 
     class UDPWorker { 
     private:
@@ -37,6 +50,7 @@ namespace nfp {
         CONCEALMENT loss_policy {CONCEALMENT::REPEAT_LAST_GOOD};
 
         struct ConnState {
+            bool is_ready = false;
             std::array<Datagram, W> buffer {};
             std::bitset<W> present {};
             uint64_t expected_seq = 0;
@@ -44,13 +58,13 @@ namespace nfp {
             std::vector<float> last_good = std::vector<float>(128, 0);
             uint16_t last_port = 55555;
             std::vector<float> faded_last_good = std::vector<float>(128, 0);
-
+            nfp::SignalPipeline pipeline;
             steady_clock::time_point last_arrive = steady_clock::now();
             steady_clock::time_point deadline = steady_clock::time_point::max();
-            SignalPipeline pipeline;
 
         };
 
+        std::function<nfp::SignalPipeline()> pipeline_factory;
         std::unordered_map<uint64_t, ConnState> conns;
         std::mutex conns_mtx;
         boost::asio::thread_pool& thread_pool;
@@ -68,8 +82,11 @@ namespace nfp {
         void handle_pkg(Datagram, udp::endpoint);
         void send_to_client(const std::vector<float>&, uint16_t);
         void set_client(std::unique_ptr<UDPClient> client) {this->client = std::move(client); }
+        void set_concealment_policy(CONCEALMENT policy) { this-> loss_policy = policy; }
+        void set_pipeline_factory(std::function<nfp::SignalPipeline()> f) { this->pipeline_factory = f; }
         boost::asio::thread_pool& get_executor() { return this->thread_pool; }
-        ~UDPWorker(){ this->reap_timer.cancel(); }
+        void stop();
+        ~UDPWorker(){ this->stop(); }
     };
 
     class UDPServer : public std::enable_shared_from_this<UDPServer> {
@@ -87,17 +104,6 @@ namespace nfp {
 
         void set_worker(std::unique_ptr<UDPWorker> w) {worker = std::move(w); }
         void start() { this->start_receive(); }
+        void finish();
     }; 
-
-    class UDPClient {
-    private:
-        boost::asio::ip::udp::socket socket;
-        boost::asio::ip::address_v4 dest_ip;
-
-    public:
-        UDPClient(boost::asio::io_context & io_context, const boost::asio::ip::address_v4 out_addr) 
-            : socket(io_context, udp::v4()), dest_ip(out_addr) {}
-
-        void async_send(const std::vector<float>&, uint16_t);
-    };
 }

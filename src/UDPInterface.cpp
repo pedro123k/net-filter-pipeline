@@ -1,7 +1,6 @@
 #include <nfp/UDPInterface.hpp>
 #include <vector>
 #include <algorithm>
-#include <iostream>
 
 using boost::asio::ip::udp;
 using nfp::Datagram;
@@ -16,11 +15,12 @@ void UDPServer::start_receive() {
         boost::asio::buffer(&this->rcv_package, sizeof(Datagram)),
         this->remote_endpoint,
         [self](boost::system::error_code ec, std::size_t bytes_recv) {
+
+            if (ec == boost::asio::error::operation_aborted) return;
+
             if (!ec && bytes_recv == sizeof(Datagram)){
                 auto from = self->remote_endpoint;
                 auto pkg = self->rcv_package;
-
-                std::cout << "rcvd" << std::endl;
 
                 boost::asio::post(self->worker->get_executor(), [self, pkg = std::move(pkg), from = std::move(from) ](){
                     self->worker->handle_pkg(std::move(pkg), std::move(from));
@@ -39,12 +39,20 @@ void UDPWorker::handle_pkg(Datagram pkg, udp::endpoint src) {
 
     uint16_t client_port;
     std::vector<float> client_output;
-    client_output.reserve(128);
+    std::vector<float> input;
+    input.reserve(128);
+
     bool send_data = false;
 
     std::unique_lock<std::mutex> lock(this->conns_mtx);
     
     auto& conn = this->conns[_hash];
+
+    if (!conn.is_ready) {
+        conn.is_ready = true;
+        conn.pipeline = this->pipeline_factory();
+    }
+
     auto now = steady_clock::now();
 
     conn.last_arrive = now;
@@ -69,21 +77,16 @@ void UDPWorker::handle_pkg(Datagram pkg, udp::endpoint src) {
         
         if (conn.present[idx]) {
 
+            float * ptr_data = conn.buffer[idx].data;            
             client_port = conn.buffer[idx].out_port;
             conn.last_port = client_port;
-            float * ptr_data = conn.buffer[idx].data;
-
-            std::vector<float> input;
-            input.reserve(128);
-
+            
             input.assign(ptr_data, ptr_data + 128);
-
-            conn.pipeline.processBlock(input, client_output);
-
             conn.present[idx] = false;
-            conn.last_good = client_output;
-
+            
+            conn.last_good = input;
             conn.faded_last_good.resize(conn.last_good.size());
+            
             for (size_t i = 0; i < conn.last_good.size(); ++i)
                 conn.faded_last_good[i] = 0.8f * conn.last_good[i];
 
@@ -97,10 +100,10 @@ void UDPWorker::handle_pkg(Datagram pkg, udp::endpoint src) {
 
             switch (this->loss_policy) {
                 case CONCEALMENT::REPEAT_LAST_GOOD:
-                    client_output = conn.last_good;
+                    input = conn.last_good;
                     break;
                 case CONCEALMENT::FADE_LAST_GOOD:
-                    client_output = conn.faded_last_good;
+                    input = conn.faded_last_good;
 
                     conn.faded_last_good.resize(conn.last_good.size());
                     for (size_t i = 0; i < conn.last_good.size(); ++i)
@@ -108,7 +111,7 @@ void UDPWorker::handle_pkg(Datagram pkg, udp::endpoint src) {
                         
                     break;
                 case CONCEALMENT::ALL_ZERO:
-                    client_output = UDPWorker::ZERO_OUTPUT;
+                    input = ZERO_OUTPUT;
                     break;  
                 default:
                     break;
@@ -120,10 +123,15 @@ void UDPWorker::handle_pkg(Datagram pkg, udp::endpoint src) {
 
     } else {
         client_port = conn.last_port;
-        client_output = ZERO_OUTPUT;
+        input = ZERO_OUTPUT;
         send_data = true;
         ++conn.expected_seq;
     }
+
+    if (input.size() != 128)
+        input = ZERO_OUTPUT;
+
+    conn.pipeline.processBlock(input, client_output);
 
     lock.unlock();
 
@@ -144,8 +152,6 @@ void UDPWorker::send_to_client(const std::vector<float>& out, uint16_t port) {
 
 void UDPClient::async_send(const std::vector<float>& data, uint16_t port) {
     udp::endpoint endp(this->dest_ip, port);
-
-    std::cout << "send" << std::endl;
 
     this->socket.async_send_to(
         boost::asio::buffer(data.data(), data.size() * sizeof(float)),
@@ -183,3 +189,26 @@ void UDPWorker::reap_dead_conns() {
             ++it;
     }
 }
+
+void nfp::UDPServer::finish() {
+    if (this->worker)
+        worker->stop();
+
+    boost::system::error_code ec;
+    this->socket.cancel(ec);
+    this->socket.close(ec);    
+}
+
+void nfp::UDPClient::close() {
+    boost::system::error_code ec;
+    this->socket.cancel(ec);
+    this->socket.close(ec);
+}
+
+void nfp::UDPWorker::stop() {
+    if (this->client) 
+        this->client->close();
+    
+    this->reap_timer.cancel(); 
+}
+

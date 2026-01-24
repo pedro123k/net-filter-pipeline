@@ -16,6 +16,8 @@ float SignalPipeline::process(float x) {
 }
 
 void SignalPipeline::processBlock(const vector<float> & input, vector<float> & output) {
+    output.clear();
+    output.reserve(input.size());
     for (const auto & x : input)
         output.push_back(this->process(x));
 }

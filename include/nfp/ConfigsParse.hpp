@@ -34,5 +34,6 @@ namespace nfp {
     std::vector<PElement_info> parse_pipeline_from(const json&);
     void from_json(const json&, Conn_info&);
     Conn_info parse_conn_from(const json&);
+    SignalPipeline build_pipeline(const std::vector<PElement_info>&, float);
 }
 
